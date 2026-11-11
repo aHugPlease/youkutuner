@@ -1,0 +1,84 @@
+# SimpleLive v1.13.4-pre —— 未签名 iOS IPA（巨魔商店 / TrollStore 用）
+#
+# 用法：在任意「新建的公开 GitHub 仓库」里创建文件
+#   .github/workflows/build-unsigned-ipa.yml
+# 把本内容原样粘贴并提交，push 会自动触发 macOS 构建。
+# 构建完成后 Release 里会出现 ios_no_sign.ipa，可直接下载。
+# 不需要 Apple 开发者账号、证书或任何 Secrets。
+
+name: build-simplelive-unsigned-ipa
+
+on: [push, workflow_dispatch]
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      # 直接检出上游 tag，本仓库不复制任何源码
+      - name: Checkout upstream source at v1.13.4-pre
+        uses: actions/checkout@v4
+        with:
+          repository: June6699/dart_simple_live
+          ref: v1.13.4-pre
+          fetch-depth: 1
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.9"
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Restore packages
+        run: |
+          cd simple_live_app
+          flutter pub get
+
+      - name: Build iOS without code signing
+        run: |
+          cd simple_live_app
+          flutter build ios --release --no-codesign
+
+      # 与上游官方工作流完全一致的打包方式
+      - name: Pack unsigned IPA
+        run: |
+          cd simple_live_app
+          mkdir -p build/ios/iphoneos/Payload
+          rm -rf build/ios/iphoneos/Payload/Runner.app
+          cp -R build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/Runner.app
+          cd build/ios/iphoneos/
+          zip -q -r ios_no_sign.ipa Payload
+          shasum -a 256 ios_no_sign.ipa
+          ls -lh ios_no_sign.ipa
+
+      - name: Upload build artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios_no_sign
+          path: simple_live_app/build/ios/iphoneos/ios_no_sign.ipa
+          retention-days: 30
+
+      # 发布成 Release 资源，方便直接下载
+      - name: Publish IPA as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.13.4-pre-unsigned
+          name: SimpleLive v1.13.4-pre unsigned IPA
+          prerelease: true
+          body: |
+            Unsigned IPA built from June6699/dart_simple_live @ v1.13.4-pre.
+            For TrollStore / sideloading only. No Apple certificate involved.
+          files: simple_live_app/build/ios/iphoneos/ios_no_sign.ipa
